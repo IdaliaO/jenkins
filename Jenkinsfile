@@ -1,34 +1,74 @@
 pipeline {
-    agent any
+    agent any  // Usar cualquier nodo disponible de Jenkins
     environment {
-        DOCKERHUB_CREDENTIALS = 'git'  // ID de credencial en Jenkins
-        IMAGE_NAME = 'amazonlinux'        // Nombre de la imagen Docker
-        IMAGE_TAG = 'latest'              // Etiqueta de la imagen
+        DOCKER_IMAGE = 'idaliao/myapp:latest'  // Nombre de la imagen Docker que se va a construir
     }
     stages {
-        stage('Clone Repository') {
+        // Etapa para obtener el código desde el repositorio de GitHub
+        stage('Checkout SCM') {
             steps {
-                git branch: 'main', url: 'https://github.com/IdaliaO/jenkins.git'
+                // Utiliza las credenciales de Git para clonar el repositorio
+                checkout scm
             }
         }
-        stage('Build and Push Docker Image') {
+
+        // Etapa para construir la imagen Docker
+        stage('Build Docker Image') {
             steps {
                 script {
-                    withCredentials([usernamePassword(credentialsId: DOCKERHUB_CREDENTIALS, usernameVariable: 'DOCKERHUB_USERNAME', 
-                    passwordVariable: 'DOCKERHUB_PASSWORD')]) {
-                        sh '''
-                        echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
-                        docker build -t "$DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG" .
-                        docker push "$DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
-                        '''
+                    // Ejecutar el build de Docker para construir la imagen
+                    echo "Building Docker image..."
+                    sh 'docker build -t $DOCKER_IMAGE .'  // Asegúrate de tener un Dockerfile en el repositorio
+                }
+            }
+        }
+
+        // Etapa para iniciar sesión en DockerHub y subir la imagen
+        stage('Login to DockerHub') {
+            steps {
+                script {
+                    // Usamos las credenciales de Docker que configuraste en Jenkins
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                        // Iniciar sesión en DockerHub usando las credenciales
+                        sh 'echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin'
                     }
                 }
             }
         }
+
+        // Etapa para subir la imagen Docker a DockerHub
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    // Subir la imagen construida a DockerHub
+                    echo "Pushing Docker image..."
+                    sh 'docker push $DOCKER_IMAGE'
+                }
+            }
+        }
+
+        // Etapa para limpiar imágenes no utilizadas después del build
+        stage('Clean up') {
+            steps {
+                script {
+                    // Limpiar imágenes que no se usan después de la subida
+                    echo "Cleaning up Docker images..."
+                    sh 'docker rmi $DOCKER_IMAGE'
+                }
+            }
+        }
     }
+    
+    // Manejo de postacciones (puedes agregar notificaciones o auditoría aquí)
     post {
+        success {
+            echo 'Pipeline successfully completed!'
+        }
+        failure {
+            echo 'Pipeline failed.'
+        }
         always {
-            echo 'Pipeline finished'
+            cleanWs()  // Limpiar el espacio de trabajo después de la ejecución
         }
     }
 }
